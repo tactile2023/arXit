@@ -1,7 +1,149 @@
 import arxit.doi_verifier as verifier
 
-from arxit.doi_verifier import (verify_doi_references, find_unresolved_doi_citations)
+from arxit.doi_verifier import (verify_doi_references, audit_doi_citations, find_doi_year_mismatches, extract_crossref_years,find_unresolved_doi_citations)
 from arxit.models import Reference, DoiCitationResult
+
+
+def test_audit_doi_citations_combines_findings(monkeypatch):
+    unresolved_reference = Reference(
+        label="1",
+        raw_text="Unknown paper.",
+        doi="10.9999/missing",
+    )
+    wrong_year_reference = Reference(
+        label="2",
+        raw_text="Example paper. 2012.",
+        year=2012,
+        doi="10.1000/example",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=unresolved_reference,
+            metadata=None,
+        ),
+        DoiCitationResult(
+            reference=wrong_year_reference,
+            metadata={
+                "published": {
+                    "date-parts": [[2020]]
+                }
+            },
+        ),
+    ]
+
+    monkeypatch.setattr(
+        verifier,
+        "verify_doi_references",
+        lambda references: results,
+    )
+
+    findings = audit_doi_citations(
+        [
+            unresolved_reference,
+            wrong_year_reference,
+        ]
+    )
+
+    assert [
+        finding.finding_type
+        for finding in findings] == [
+        "unresolved_doi_citation",
+        "doi_year_mismatch",
+    ]
+
+
+
+
+
+
+def test_find_doi_year_mismatch():
+    reference = Reference(
+        label="4",
+        raw_text="Example Paper. 2012.",
+        year=2012,
+        doi="10.1000/example",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata={
+                "published-online": {
+                    "date-parts": [[2020, 12, 15]]
+                },
+                "published-print": {
+                    "date-parts": [[2021, 1]]
+                },
+            },
+        )
+    ]
+
+    findings = find_doi_year_mismatches(results)
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "doi_year_mismatch"
+    )
+    assert findings[0].message == (
+        "Reference 4 cites DOI 10.1000/example "
+        "as 2012, but Crossref reports 2020 or 2021."
+    )
+
+
+def test_doi_online_year_creates_no_finding():
+    reference = Reference(
+        label="4",
+        raw_text="Example Paper. 2020.",
+        year=2020,
+        doi="10.1000/example",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata={
+                "published-online": {
+                    "date-parts": [[2020]]
+                },
+                "published-print": {
+                    "date-parts": [[2021]]
+                },
+            },
+        )
+    ]
+
+    assert find_doi_year_mismatches(results) == []
+
+
+
+
+def test_extract_crossref_years():
+    metadata = {
+        "published-online": {
+            "date-parts": [[2020, 12, 15]]
+        },
+        "published-print": {
+            "date-parts": [[2021, 1]]
+        },
+    }
+
+    assert extract_crossref_years(metadata) == {
+        2020,
+        2021,
+    }
+
+
+def test_extract_crossref_years_ignores_missing_dates():
+    metadata = {
+        "title": ["Example Paper"],
+    }
+
+    assert extract_crossref_years(metadata) == set()
+
+
+
+
 
 
 def test_find_unresolved_doi_citations():

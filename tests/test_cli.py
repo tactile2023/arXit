@@ -139,12 +139,17 @@ def test_cli_displays_metadata(monkeypatch, capsys):
     reference = Reference(
         label="7",
         raw_text="Unknown paper. arXiv: 2401.99999.",
-        arxiv_id="2401.99999"
+        arxiv_id="2401.99999",
+        doi="10.9999/missing"
     )
 
     finding = Finding(finding_type="unresolved_arxiv_citation",
                       message=("arXiv ID 2401.99999 could not be resolved."),
                       reference=reference)
+
+    doi_finding = Finding(finding_type="unresolved_doi_citation",
+                          message=("DOI 10.9999/missing could not be resolved."),
+                          reference = reference)
 
 
     monkeypatch.setattr(cli, "fetch_arxiv_metadata_xml", fake_fetch)
@@ -158,6 +163,7 @@ def test_cli_displays_metadata(monkeypatch, capsys):
     monkeypatch.setattr(cli, "parse_pdf", fake_parse_pdf)
     monkeypatch.setattr(cli, "extract_references", lambda sections:[reference])
     monkeypatch.setattr(cli, "audit_arxiv_citations", lambda references: [finding])
+    monkeypatch.setattr(cli, "audit_doi_citations", lambda references: [doi_finding])
 
     cli.main()
 
@@ -170,8 +176,9 @@ def test_cli_displays_metadata(monkeypatch, capsys):
     assert "Characters extracted: 18" in output
     assert "Sections found: 0" in output
     assert "References found: 1" in output
-    assert "Citation findings: 1" in output
+    assert "Citation findings: 2" in output
     assert "arXiv ID 2401.99999 could not be resolved." in output
+    assert "DOI 10.9999/missing could not be resolved." in output
     
 
 
