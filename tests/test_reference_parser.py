@@ -2,6 +2,30 @@ from arxit.reference_parser import (
     extract_arxiv_id, extract_year, extract_doi, extract_url)
 
 
+def test_extracts_doi_split_after_prefix():
+    raw_text = (
+        "Example paper. "
+        "https://doi.org/10. 1007/example"
+    )
+
+    assert extract_doi(raw_text) == (
+        "10.1007/example"
+    )
+
+
+def test_extracts_doi_split_inside_suffix():
+    raw_text = (
+        "Visual Analytics in Deep Learning. "
+        "https://doi.org/10.1109/TVCG. "
+        "2018.2843369"
+    )
+
+    assert extract_doi(raw_text) == (
+        "10.1109/tvcg.2018.2843369"
+    )
+
+
+
 def test_extract_url():
     raw_text = (
         "Example project. Code available at "

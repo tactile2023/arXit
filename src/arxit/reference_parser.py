@@ -22,6 +22,20 @@ DOI_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+DOI_PREFIX_SPACE_PATTERN = re.compile(
+    r"\b10\.\s+(?=\d{4,9}/)",
+    re.IGNORECASE,
+)
+
+DOI_SUFFIX_SPACE_PATTERN = re.compile(
+    r"(\b10\.\d{4,9}/"
+    r"[-._;()/:a-z0-9]*[./])"
+    r"\s+(?=\d)",
+    re.IGNORECASE,
+)
+
+
+
 URL_PATTERN = re.compile(
     r'https?://[^\s<>"\']+',
     re.IGNORECASE,
@@ -38,7 +52,17 @@ def extract_url(raw_text: str) -> str | None:
 
 
 def extract_doi(raw_text: str) -> str | None:
-    match = DOI_PATTERN.search(raw_text)
+    normalized_text = DOI_PREFIX_SPACE_PATTERN.sub(
+        "10.",
+        raw_text,
+    )
+
+    normalized_text = DOI_SUFFIX_SPACE_PATTERN.sub(
+        r"\1",
+        normalized_text,
+    )
+
+    match = DOI_PATTERN.search(normalized_text)
 
     if match is None:
         return None
