@@ -5,7 +5,55 @@ from arxit.models import Reference, ArxivMetadata, ArxivCitationResult
 import arxit.citation_verifier as verifier
 import pytest
 
-from arxit.citation_verifier import (collect_unique_arxiv_ids, chunk_arxiv_ids, fetch_reference_metadata, verify_arxiv_references, match_reference_metadata, find_unresolved_arxiv_citations, find_year_mismatches, audit_arxiv_citations)
+from arxit.citation_verifier import (find_arxiv_title_mismatches, collect_unique_arxiv_ids, chunk_arxiv_ids, fetch_reference_metadata, verify_arxiv_references, match_reference_metadata, find_unresolved_arxiv_citations, find_year_mismatches, audit_arxiv_citations)
+
+
+def test_find_arxiv_title_mismatch():
+    reference = Reference(
+        label="5",
+        raw_text=(
+            "Vaswani et al. Convolutional Networks "
+            "for Image Classification. 2017. "
+            "arXiv:1706.03762."
+        ),
+        year=2017,
+        arxiv_id="1706.03762",
+    )
+
+    metadata = ArxivMetadata(
+        title="Attention Is All You Need",
+        summary="A Transformer architecture.",
+        authors=["Ashish Vaswani"],
+        published="2017-06-12T17:57:34Z",
+        updated="2023-08-02T00:41:18Z",
+        categories=["cs.CL"],
+        arxiv_id="1706.03762v7",
+        pdf_url="https://arxiv.org/pdf/1706.03762v7",
+    )
+
+    results = [
+        ArxivCitationResult(
+            reference=reference,
+            metadata=metadata,
+        )
+    ]
+
+    findings = find_arxiv_title_mismatches(
+        results
+    )
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "arxiv_title_mismatch"
+    )
+    assert findings[0].message == (
+        "Reference 5 may contain the wrong title "
+        "for arXiv ID 1706.03762. "
+        "arXiv reports: Attention Is All You Need."
+    )
+
+
+
 
 
 
@@ -129,6 +177,7 @@ def test_audit_arxiv_citations_combines_findings(monkeypatch):
     assert [finding.finding_type for finding in findings] == [
         "unresolved_arxiv_citation",
         "arxiv_year_mismatch",
+        "arxiv_title_mismatch"
     ]
 
 

@@ -4,9 +4,50 @@ from .arxiv_client import (fetch_arxiv_metadata_batch_xml)
 from .arxiv_parser import (parse_arxiv_metadata_batch)
 
 from .models import ArxivMetadata, Reference, ArxivCitationResult, Finding
+from .title_matcher import is_title_mismatch
+
+
 
 
 DEFAULT_ARXIV_BATCH_SIZE = 50
+
+
+def find_arxiv_title_mismatches(results: list[ArxivCitationResult]) -> list[Finding]:
+    findings = []
+
+    for result in results:
+        reference = result.reference
+        metadata = result.metadata
+
+        if metadata is None:
+            continue
+
+        if is_title_mismatch(
+            metadata.title,
+            reference.raw_text,
+        ):
+            label = reference.label or "unlabeled"
+
+            findings.append(
+                Finding(
+                    finding_type=(
+                        "arxiv_title_mismatch"
+                    ),
+                    message=(
+                        f"Reference {label} may contain "
+                        f"the wrong title for arXiv ID "
+                        f"{reference.arxiv_id}. "
+                        f"arXiv reports: "
+                        f"{metadata.title}."
+                    ),
+                    reference=reference,
+                )
+            )
+
+    return findings
+
+
+
 
 
 def chunk_arxiv_ids(arxiv_ids: list[str], batch_size: int = DEFAULT_ARXIV_BATCH_SIZE) -> list[list[str]]:
@@ -24,7 +65,7 @@ def chunk_arxiv_ids(arxiv_ids: list[str], batch_size: int = DEFAULT_ARXIV_BATCH_
 def audit_arxiv_citations(references: list[Reference]) -> list[Finding]:
     results = verify_arxiv_references(references)
 
-    findings = find_unresolved_arxiv_citations(results) + find_year_mismatches(results)
+    findings = find_unresolved_arxiv_citations(results) + find_year_mismatches(results) + find_arxiv_title_mismatches(results)
 
     return findings
 

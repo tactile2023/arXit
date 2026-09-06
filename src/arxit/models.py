@@ -65,3 +65,7 @@ class Finding:
 class DoiCitationResult:
     reference: Reference
     metadata: dict | None
+    agency: str | None = None
+
+
+

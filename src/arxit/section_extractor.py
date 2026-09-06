@@ -13,12 +13,17 @@ APPENDIX_TITLE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+APPENDIX_FOR_PATTERN = re.compile(
+    r"^Appendix\s+for\s+(.+)$",
+    re.IGNORECASE,
+)
+
 APPENDIX_SUBHEADING_PATTERN = re.compile(
     r"^[A-Z]\.\d{1,2}(?:\.\d{1,2})*\.?\s+(.+)$"
 )
 
 LETTERED_APPENDIX_TITLE_PATTERN = re.compile(
-    r"^([A-Z])\.\s+(.+)$"
+    r"^([A-Z])\.?\s+(.+)$"
 )
 
 KNOWN_HEADINGS = {
@@ -36,6 +41,17 @@ KNOWN_HEADINGS = {
 def find_heading_title(line, current_title=None):
     if line.lower() in KNOWN_HEADINGS:
         return line.title()
+
+    appendix_for_match = APPENDIX_FOR_PATTERN.match(line)
+
+    if (
+        appendix_for_match
+        and current_title is not None
+        and current_title.lower()
+        in {"references", "bibliography"}
+    ):
+        description = appendix_for_match.group(1).strip()
+        return f"Appendix: {description}"
 
     appendix_title_match = APPENDIX_TITLE_PATTERN.match(line)
 
@@ -67,10 +83,11 @@ def find_heading_title(line, current_title=None):
         current_title_lower = current_title.lower()
         expected_letter = None
 
-        if current_title_lower in {
-            "references",
-            "bibliography",
-        }:
+        if (
+            current_title_lower
+            in {"references", "bibliography", "appendix"}
+            or current_title_lower.startswith("appendix:")
+        ):
             expected_letter = "A"
 
         else:

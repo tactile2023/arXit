@@ -1,7 +1,265 @@
 import arxit.doi_verifier as verifier
 
-from arxit.doi_verifier import (verify_doi_references, audit_doi_citations, find_doi_year_mismatches, extract_crossref_years,find_unresolved_doi_citations)
+from arxit.doi_verifier import (find_doi_title_mismatches, verify_doi_references, audit_doi_citations, find_doi_year_mismatches, extract_crossref_years,find_unresolved_doi_citations)
 from arxit.models import Reference, DoiCitationResult
+
+
+def test_find_datacite_title_mismatch():
+    reference = Reference(
+        label="10",
+        raw_text=(
+            "Example Author. Completely Wrong Dataset "
+            "Title. 2024. doi:10.1000/datacite."
+        ),
+        year=2024,
+        doi="10.1000/datacite",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata={
+                "doi": "10.1000/datacite",
+                "titles": [
+                    {
+                        "title": (
+                            "Benchmark Data for Scientific "
+                            "Integrity Research"
+                        )
+                    }
+                ],
+                "publicationYear": 2024,
+            },
+            agency="datacite",
+        )
+    ]
+
+    findings = find_doi_title_mismatches(
+        results
+    )
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "doi_title_mismatch"
+    )
+    assert findings[0].message == (
+        "Reference 10 may contain the wrong title "
+        "for DOI 10.1000/datacite. "
+        "DataCite reports: Benchmark Data for "
+        "Scientific Integrity Research."
+    )
+
+    
+
+
+
+def test_find_datacite_year_mismatch():
+    reference = Reference(
+        label="9",
+        raw_text=(
+            "Example Dataset. 2021. "
+            "doi:10.1000/datacite."
+        ),
+        year=2021,
+        doi="10.1000/datacite",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata={
+                "doi": "10.1000/datacite",
+                "titles": [
+                    {
+                        "title": "Example Dataset"
+                    }
+                ],
+                "publicationYear": 2024,
+            },
+            agency="datacite",
+        )
+    ]
+
+    findings = find_doi_year_mismatches(
+        results
+    )
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "doi_year_mismatch"
+    )
+    assert findings[0].message == (
+        "Reference 9 cites DOI 10.1000/datacite "
+        "as 2021, but DataCite reports 2024."
+    )
+
+
+
+
+def test_datacite_doi_is_not_unresolved():
+    reference = Reference(
+        label="4",
+        raw_text=(
+            "Attention Is All You Need. "
+            "doi:10.48550/arxiv.1706.03762."
+        ),
+        doi="10.48550/arxiv.1706.03762",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata=None,
+            agency="datacite",
+        )
+    ]
+
+    assert find_unresolved_doi_citations(results) == []
+
+
+
+
+
+
+
+
+
+
+
+
+
+def test_verify_doi_references_routes_by_agency(monkeypatch):
+    crossref_reference = Reference(
+        label="1",
+        raw_text="Crossref paper.",
+        doi="10.1000/crossref",
+    )
+    datacite_reference = Reference(
+        label="2",
+        raw_text="DataCite dataset.",
+        doi="10.1000/datacite",
+    )
+    missing_reference = Reference(
+        label="3",
+        raw_text="Missing DOI.",
+        doi="10.1000/missing",
+    )
+
+    agencies = {
+        "10.1000/crossref": "crossref",
+        "10.1000/datacite": "datacite",
+        "10.1000/missing": None,
+    }
+
+    requested_datacite_dois = []
+
+    def fake_datacite_fetch(doi):
+        requested_datacite_dois.append(doi)
+
+        return {
+            "doi": doi,
+            "titles": [{"title": "DataCite Dataset"}], "publicationYear": 2024
+        }
+
+    monkeypatch.setattr(verifier, "fetch_datacite_metadata", fake_datacite_fetch)
+
+    monkeypatch.setattr(
+        verifier,
+        "fetch_doi_agency",
+        lambda doi: agencies[doi],
+    )
+    monkeypatch.setattr(
+        verifier,
+        "fetch_crossref_metadata",
+        lambda doi: {
+            "DOI": doi,
+            "title": ["Crossref Paper"],
+        },
+    )
+
+    results = verify_doi_references(
+        [
+            crossref_reference,
+            datacite_reference,
+            missing_reference,
+        ]
+    )
+
+    assert results[0].agency == "crossref"
+    assert results[0].metadata is not None
+
+    assert results[1].agency == "datacite"
+    assert results[1].metadata is not None
+    assert results[1].metadata["publicationYear"] == 2024
+
+    assert requested_datacite_dois == ["10.1000/datacite"]
+
+    assert results[2].agency is None
+    assert results[2].metadata is None
+
+
+
+
+def test_find_doi_title_mismatch():
+    reference = Reference(
+        label="6",
+        raw_text=(
+            "Example Author. Convolutional Networks "
+            "for Image Classification. 2021. "
+            "doi:10.1000/example."
+        ),
+        year=2021,
+        doi="10.1000/example",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata={
+                "DOI": "10.1000/example",
+                "title": [
+                    "Attention Is All You Need"
+                ],
+                "published": {
+                    "date-parts": [[2021]]
+                },
+            },
+        )
+    ]
+
+    findings = find_doi_title_mismatches(results)
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "doi_title_mismatch"
+    )
+    assert findings[0].message == (
+        "Reference 6 may contain the wrong title "
+        "for DOI 10.1000/example. "
+        "Crossref reports: Attention Is All You Need."
+    )
+
+
+def test_missing_crossref_title_is_not_flagged():
+    reference = Reference(
+        label="6",
+        raw_text="Example paper. 2021.",
+        year=2021,
+        doi="10.1000/example",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata={
+                "DOI": "10.1000/example",
+            },
+        )
+    ]
+
+    assert find_doi_title_mismatches(results) == []
+
+
 
 
 def test_audit_doi_citations_combines_findings(monkeypatch):
@@ -207,18 +465,29 @@ def test_verify_doi_references_deduplicates_requests(monkeypatch):
     )
 
     requested_dois = []
+    requested_agencies = []
+
+    def fake_agency(doi):
+        requested_agencies.append(doi)
+
+        if doi == "10.1000/example":
+            return "crossref"
+
+        return None
 
     def fake_fetch(doi):
         requested_dois.append(doi)
 
-        if doi == "10.1000/example":
-            return {
-                "DOI": doi,
-                "title": ["Example Paper"],
-            }
+        return {
+            "DOI": doi,
+            "title": ["Example Paper"],
+        }
 
-        return None
-
+    monkeypatch.setattr(
+        verifier,
+        "fetch_doi_agency",
+        fake_agency,
+    )
     monkeypatch.setattr(
         verifier,
         "fetch_crossref_metadata",
@@ -233,9 +502,13 @@ def test_verify_doi_references_deduplicates_requests(monkeypatch):
         ]
     )
 
-    assert requested_dois == [
+    assert requested_agencies == [
         "10.1000/example",
         "10.9999/missing",
+    ]
+
+    assert requested_dois == [
+        "10.1000/example",
     ]
 
     assert len(results) == 3
