@@ -51,6 +51,7 @@ class ParsedPaper:
 class ArxivCitationResult:
     reference: Reference
     metadata: ArxivMetadata | None
+    error: str | None = None
 
 
 @dataclass
@@ -66,6 +67,7 @@ class DoiCitationResult:
     reference: Reference
     metadata: dict | None
     agency: str | None = None
+    error: str | None = None
 
 
 

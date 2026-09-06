@@ -4,8 +4,118 @@ from arxit.citation_verifier import (
 from arxit.models import Reference, ArxivMetadata, ArxivCitationResult
 import arxit.citation_verifier as verifier
 import pytest
-
+import httpx
 from arxit.citation_verifier import (find_arxiv_title_mismatches, collect_unique_arxiv_ids, chunk_arxiv_ids, fetch_reference_metadata, verify_arxiv_references, match_reference_metadata, find_unresolved_arxiv_citations, find_year_mismatches, audit_arxiv_citations)
+
+
+
+def test_find_arxiv_verification_errors():
+    reference = Reference(
+        label="7",
+        raw_text="Example unavailable paper.",
+        arxiv_id="1706.03762",
+    )
+
+    results = [
+        ArxivCitationResult(
+            reference=reference,
+            metadata=None,
+            error="The read operation timed out",
+        ),
+    ]
+
+    findings = (
+        verifier.find_arxiv_verification_errors(
+            results
+        )
+    )
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "arxiv_verification_error"
+    )
+    assert findings[0].message == (
+        "Reference 7 could not be verified because "
+        "arXiv returned an error: "
+        "The read operation timed out."
+    )
+    assert findings[0].reference is reference
+
+
+
+def test_verify_arxiv_references_continues_after_batch_timeout(monkeypatch):
+    successful_reference = Reference(
+        label="1",
+        raw_text="Successful paper.",
+        arxiv_id="1706.03762",
+    )
+    timed_out_reference = Reference(
+        label="2",
+        raw_text="Slow paper.",
+        arxiv_id="1810.04805",
+    )
+
+    successful_metadata = ArxivMetadata(
+        title="Attention Is All You Need",
+        summary="Example summary",
+        authors=["Example Author"],
+        published="2017-06-12T17:57:34Z",
+        updated="2017-06-12T17:57:34Z",
+        categories=["cs.CL"],
+        arxiv_id="1706.03762v7",
+        pdf_url="https://arxiv.org/pdf/1706.03762v7",
+    )
+
+    monkeypatch.setattr(
+        verifier,
+        "chunk_arxiv_ids",
+        lambda arxiv_ids, batch_size: [
+            ["1706.03762"],
+            ["1810.04805"],
+        ],
+    )
+
+    def fake_fetch(batch):
+        if batch == ["1810.04805"]:
+            request = httpx.Request(
+                "GET",
+                "https://export.arxiv.org/api/query",
+            )
+            raise httpx.ReadTimeout(
+                "The read operation timed out",
+                request=request,
+            )
+
+        return "<feed>successful</feed>"
+
+    monkeypatch.setattr(
+        verifier,
+        "fetch_arxiv_metadata_batch_xml",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        verifier,
+        "parse_arxiv_metadata_batch",
+        lambda xml_text: [successful_metadata],
+    )
+
+    results = verify_arxiv_references(
+        [
+            successful_reference,
+            timed_out_reference,
+        ]
+    )
+
+    assert len(results) == 2
+    assert results[0].metadata is successful_metadata
+    assert results[0].error is None
+    assert results[1].metadata is None
+    assert results[1].error == (
+        "The read operation timed out"
+    )
+
+
+
 
 
 def test_find_arxiv_title_mismatch():
@@ -325,9 +435,7 @@ def test_resolved_arxiv_citation_creates_no_finding():
 
 
 
-def test_verify_arxiv_references(
-    monkeypatch,
-):
+def test_verify_arxiv_references(monkeypatch):
     reference = Reference(
         label="1",
         raw_text="Attention paper.",
@@ -345,10 +453,24 @@ def test_verify_arxiv_references(
         pdf_url="https://arxiv.org/pdf/1706.03762v7",
     )
 
+
+    def fake_fetch(batch):
+        assert batch == ["1706.03762"]
+        return "<feed>fake</feed>"
+
+    def fake_parse(xml_text):
+        assert xml_text == "<feed>fake</feed>"
+        return [metadata]
+
     monkeypatch.setattr(
         verifier,
-        "fetch_reference_metadata",
-        lambda references: [metadata],
+        "fetch_arxiv_metadata_batch_xml",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        verifier,
+        "parse_arxiv_metadata_batch",
+        fake_parse,
     )
 
     results = verify_arxiv_references(

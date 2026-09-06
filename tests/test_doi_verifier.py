@@ -1,7 +1,102 @@
 import arxit.doi_verifier as verifier
-
+import httpx
 from arxit.doi_verifier import (find_doi_title_mismatches, verify_doi_references, audit_doi_citations, find_doi_year_mismatches, extract_crossref_years,find_unresolved_doi_citations)
 from arxit.models import Reference, DoiCitationResult
+
+
+def test_find_doi_verification_errors():
+    reference = Reference(
+        label="12",
+        raw_text="Example timed-out citation.",
+        doi="10.1000/slow",
+    )
+
+    results = [
+        DoiCitationResult(
+            reference=reference,
+            metadata=None,
+            agency="crossref",
+            error="The read operation timed out",
+        ),
+    ]
+
+    findings = verifier.find_doi_verification_errors(
+        results
+    )
+
+    assert len(findings) == 1
+    assert findings[0].finding_type == (
+        "doi_verification_error"
+    )
+    assert findings[0].message == (
+        "Reference 12 could not be verified because "
+        "Crossref returned an error: "
+        "The read operation timed out."
+    )
+    assert findings[0].reference is reference
+
+    
+
+
+
+def test_verify_doi_references_continues_after_timeout(monkeypatch):
+    successful_reference = Reference(
+        label="1",
+        raw_text="Successful paper.",
+        doi="10.1000/success",
+    )
+    timed_out_reference = Reference(
+        label="2",
+        raw_text="Slow paper.",
+        doi="10.1000/timeout",
+    )
+
+    def fake_agency(doi):
+        return "crossref"
+
+    def fake_metadata(doi, agency):
+        if doi == "10.1000/timeout":
+            request = httpx.Request(
+                "GET",
+                f"https://api.crossref.org/works/{doi}",
+            )
+            raise httpx.ReadTimeout(
+                "The read operation timed out",
+                request=request,
+            )
+
+        return {
+            "DOI": doi,
+            "title": ["Successful Paper"],
+        }
+
+    monkeypatch.setattr(
+        verifier,
+        "fetch_doi_agency",
+        fake_agency,
+    )
+    monkeypatch.setattr(
+        verifier,
+        "fetch_metadata_for_doi",
+        fake_metadata,
+    )
+
+    results = verify_doi_references(
+        [
+            successful_reference,
+            timed_out_reference,
+        ]
+    )
+
+    assert len(results) == 2
+    assert results[0].metadata == {
+        "DOI": "10.1000/success",
+        "title": ["Successful Paper"],
+    }
+    assert results[1].metadata is None
+
+
+
 
 
 def test_find_datacite_title_mismatch():
@@ -49,7 +144,7 @@ def test_find_datacite_title_mismatch():
         "Scientific Integrity Research."
     )
 
-    
+
 
 
 

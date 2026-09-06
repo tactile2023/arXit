@@ -2,7 +2,7 @@ from .crossref_client import (fetch_crossref_metadata, fetch_doi_agency)
 from .title_matcher import is_title_mismatch
 from .datacite_client import fetch_datacite_metadata
 from .models import (DoiCitationResult, Reference, Finding)
-
+import httpx
 
 CROSSREF_DATE_FIELDS = (
     "published",
@@ -118,13 +118,48 @@ def find_doi_title_mismatches(results: list[DoiCitationResult]) -> list[Finding]
 
 
 
+def find_doi_verification_errors(results: list[DoiCitationResult]) -> list[Finding]:
+    findings = []
+
+    for result in results:
+        if result.error is None:
+            continue
+
+        reference = result.reference
+        label = reference.label or "unlabeled"
+
+        if result.agency == "crossref":
+            service_name = "Crossref"
+        elif result.agency == "datacite":
+            service_name = "DataCite"
+        else:
+            service_name = "DOI registry"
+
+        findings.append(
+            Finding(
+                finding_type="doi_verification_error",
+                message=(
+                    f"Reference {label} could not be "
+                    f"verified because {service_name} "
+                    f"returned an error: "
+                    f"{result.error}."
+                ),
+                reference=reference,
+            )
+        )
+
+    return findings
+
+
+
+
 
 
 
 def audit_doi_citations(references: list[Reference]) -> list[Finding]:
     results = verify_doi_references(references)
 
-    return (find_unresolved_doi_citations(results) + find_doi_year_mismatches(results) + find_doi_title_mismatches(results))
+    return (find_unresolved_doi_citations(results) + find_doi_year_mismatches(results) + find_doi_title_mismatches(results) + find_doi_verification_errors(results))
 
 
 def find_doi_year_mismatches(results: list[DoiCitationResult]) -> list[Finding]:
@@ -215,16 +250,27 @@ def collect_unique_dois(references: list[Reference]) -> list[str]:
 def verify_doi_references(references: list[Reference]) -> list[DoiCitationResult]:
     unique_dois = collect_unique_dois(references)
 
-    agencies_by_doi = {
-        doi: fetch_doi_agency(doi)
-        for doi in unique_dois
-    }
+    agencies_by_doi = {}
+    metadata_by_doi = {}
+    errors_by_doi = {}
 
-    metadata_by_doi = {
-        doi: 
-            fetch_metadata_for_doi(doi, agencies_by_doi[doi])
-        for doi in unique_dois
-    }
+    for doi in unique_dois:
+        agency = None
+        metadata = None
+        error = None
+
+        try:
+            agency = fetch_doi_agency(doi)
+            metadata = fetch_metadata_for_doi(
+                doi,
+                agency,
+            )
+        except httpx.HTTPError as exc:
+            error = str(exc)
+
+        agencies_by_doi[doi] = agency
+        metadata_by_doi[doi] = metadata
+        errors_by_doi[doi] = error
 
     return [
         DoiCitationResult(
@@ -235,17 +281,20 @@ def verify_doi_references(references: list[Reference]) -> list[DoiCitationResult
             agency=agencies_by_doi[
                 reference.doi
             ],
+            error=errors_by_doi[
+                reference.doi
+            ],
         )
         for reference in references
-        if reference.doi is not None]
-
+        if reference.doi is not None
+    ]
 
 
 def find_unresolved_doi_citations(results: list[DoiCitationResult]) -> list[Finding]:
     findings = []
 
     for result in results:
-        if result.agency is None and result.metadata is None:
+        if result.agency is None and result.metadata is None and result.error is None:
             doi = result.reference.doi
 
             findings.append(

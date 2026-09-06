@@ -2,7 +2,7 @@ from .models import Reference
 import re
 from .arxiv_client import (fetch_arxiv_metadata_batch_xml)
 from .arxiv_parser import (parse_arxiv_metadata_batch)
-
+import httpx
 from .models import ArxivMetadata, Reference, ArxivCitationResult, Finding
 from .title_matcher import is_title_mismatch
 
@@ -12,7 +12,8 @@ from .title_matcher import is_title_mismatch
 DEFAULT_ARXIV_BATCH_SIZE = 50
 
 
-def find_arxiv_title_mismatches(results: list[ArxivCitationResult]) -> list[Finding]:
+def find_arxiv_title_mismatches(
+    results: list[ArxivCitationResult],) -> list[Finding]:
     findings = []
 
     for result in results:
@@ -65,11 +66,38 @@ def chunk_arxiv_ids(arxiv_ids: list[str], batch_size: int = DEFAULT_ARXIV_BATCH_
 def audit_arxiv_citations(references: list[Reference]) -> list[Finding]:
     results = verify_arxiv_references(references)
 
-    findings = find_unresolved_arxiv_citations(results) + find_year_mismatches(results) + find_arxiv_title_mismatches(results)
+    findings = find_unresolved_arxiv_citations(results) + find_year_mismatches(results) + find_arxiv_title_mismatches(results) + find_arxiv_verification_errors(results)
 
     return findings
 
 
+
+
+def find_arxiv_verification_errors(results: list[ArxivCitationResult]) -> list[Finding]:
+    findings = []
+
+    for result in results:
+        if result.error is None:
+            continue
+
+        reference = result.reference
+        label = reference.label or "unlabeled"
+
+        findings.append(
+            Finding(
+                finding_type=(
+                    "arxiv_verification_error"
+                ),
+                message=(
+                    f"Reference {label} could not be "
+                    f"verified because arXiv returned "
+                    f"an error: {result.error}."
+                ),
+                reference=reference,
+            )
+        )
+
+    return findings
 
 
 def find_year_mismatches(results: list[ArxivCitationResult]) -> list[Finding]:
@@ -106,12 +134,11 @@ def find_year_mismatches(results: list[ArxivCitationResult]) -> list[Finding]:
 
 
 
-def find_unresolved_arxiv_citations(
-    results: list[ArxivCitationResult]) -> list[Finding]:
+def find_unresolved_arxiv_citations(results: list[ArxivCitationResult]) -> list[Finding]:
     findings = []
 
     for result in results:
-        if result.metadata is None:
+        if result.metadata is None and result.error is None:
             arxiv_id = result.reference.arxiv_id
 
             findings.append(
@@ -172,10 +199,55 @@ def match_reference_metadata(
 
 
 def verify_arxiv_references(references: list[Reference]) -> list[ArxivCitationResult]:
-    metadata_items = fetch_reference_metadata(references)
+    arxiv_ids = collect_unique_arxiv_ids(references)
+    metadata_items = []
+    errors_by_id = {}
 
-    return match_reference_metadata(references, metadata_items)
+    for batch in chunk_arxiv_ids(
+        arxiv_ids,
+        batch_size=DEFAULT_ARXIV_BATCH_SIZE,
+    ):
+        try:
+            xml_text = fetch_arxiv_metadata_batch_xml(
+                batch
+            )
+            batch_metadata = (
+                parse_arxiv_metadata_batch(xml_text)
+            )
+            metadata_items.extend(batch_metadata)
 
+        except httpx.HTTPError as exc:
+            for arxiv_id in batch:
+                base_id = remove_arxiv_version(
+                    arxiv_id
+                )
+                errors_by_id[base_id] = str(exc)
+
+    metadata_by_id = {
+        remove_arxiv_version(metadata.arxiv_id):
+        metadata
+        for metadata in metadata_items
+    }
+
+    results = []
+
+    for reference in references:
+        if reference.arxiv_id is None:
+            continue
+
+        base_id = remove_arxiv_version(
+            reference.arxiv_id
+        )
+
+        results.append(
+            ArxivCitationResult(
+                reference=reference,
+                metadata=metadata_by_id.get(base_id),
+                error=errors_by_id.get(base_id),
+            )
+        )
+
+    return results
 
 
 def collect_unique_arxiv_ids(references: list[Reference]) -> list[str]:
