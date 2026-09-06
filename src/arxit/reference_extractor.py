@@ -1,6 +1,9 @@
 import re
-
+from .reference_parser import (extract_year, extract_arxiv_id, extract_doi, extract_url)
 from .models import Reference
+
+
+
 
 REFERENCE_START_PATTERN = re.compile(
     r"^\[(\d+)\]\s*(.*)$"
@@ -13,6 +16,17 @@ AUTHOR_YEAR_START_PATTERN = re.compile(
 YEAR_AT_LINE_START_PATTERN = re.compile(
     r"^(?:19|20)\d{2}[a-z]?\.(?:\s+.*)?$"
 )
+
+def build_reference(label, raw_text):
+    return Reference(
+        label=label,
+        raw_text=raw_text,
+        year=extract_year(raw_text),
+        arxiv_id = extract_arxiv_id(raw_text),
+        doi = extract_doi(raw_text),
+        url = extract_url(raw_text)
+    )
+    
 
 
 def extract_references(sections):
@@ -57,7 +71,7 @@ def extract_numbered_references(lines):
         if match:
             if current_label is not None:
                 references.append(
-                    Reference(
+                    build_reference(
                         label=current_label,
                         raw_text=" ".join(current_lines),
                     )
@@ -71,7 +85,7 @@ def extract_numbered_references(lines):
 
     if current_label is not None:
         references.append(
-            Reference(
+            build_reference(
                 label=current_label,
                 raw_text=" ".join(current_lines),
             )
@@ -105,7 +119,7 @@ def extract_author_year_references(lines):
 
             if current_lines:
                 references.append(
-                    Reference(
+                    build_reference(
                         label=None,
                         raw_text=" ".join(current_lines),
                     )
@@ -129,7 +143,7 @@ def extract_author_year_references(lines):
 
             if current_lines:
                 references.append(
-                    Reference(
+                    build_reference(
                         label=None,
                         raw_text=" ".join(current_lines),
                     )
@@ -145,7 +159,7 @@ def extract_author_year_references(lines):
 
     if current_lines:
         references.append(
-            Reference(
+            build_reference(
                 label=None,
                 raw_text=" ".join(current_lines),
             )

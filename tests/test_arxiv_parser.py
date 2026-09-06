@@ -1,6 +1,6 @@
 import pytest
 
-from arxit.arxiv_parser import parse_arxiv_metadata
+from arxit.arxiv_parser import (parse_arxiv_metadata, parse_arxiv_metadata_batch)
 
 SAMPLE_XML = """
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -46,6 +46,59 @@ SAMPLE_XML = """
 </entry>
 </feed>
 """
+
+
+
+BATCH_XML = """
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Maxout Networks</title>
+    <summary>A maxout model.</summary>
+    <author><name>Ian Goodfellow</name></author>
+    <published>2013-02-18T20:11:11Z</published>
+    <updated>2013-02-18T20:11:11Z</updated>
+    <category term="cs.LG" />
+    <id>http://arxiv.org/abs/1302.4389v4</id>
+    <link
+      title="pdf"
+      href="https://arxiv.org/pdf/1302.4389v4"
+    />
+  </entry>
+
+  <entry>
+    <title>Attention Is All You Need</title>
+    <summary>A Transformer architecture.</summary>
+    <author><name>Ashish Vaswani</name></author>
+    <published>2017-06-12T17:57:34Z</published>
+    <updated>2023-08-02T00:41:18Z</updated>
+    <category term="cs.CL" />
+    <id>http://arxiv.org/abs/1706.03762v7</id>
+    <link
+      title="pdf"
+      href="https://arxiv.org/pdf/1706.03762v7"
+    />
+  </entry>
+</feed>
+"""
+
+def test_parse_arxiv_metadata_batch():
+    results = parse_arxiv_metadata_batch(BATCH_XML)
+
+    assert len(results) == 2
+    assert results[0].arxiv_id == "1302.4389v4"
+    assert results[0].title == "Maxout Networks"
+    assert results[1].arxiv_id == "1706.03762v7"
+    assert results[1].title == "Attention Is All You Need"
+
+
+def test_parse_arxiv_metadata_batch_returns_empty_list():
+    empty_feed = """
+    <feed xmlns="http://www.w3.org/2005/Atom">
+    </feed>
+    """
+
+    assert parse_arxiv_metadata_batch(empty_feed) == []
+
 
 xml_without_pdf = SAMPLE_XML.replace("""<link
         title="pdf"

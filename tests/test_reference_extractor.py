@@ -1,5 +1,39 @@
 from arxit.models import PaperSection
-from arxit.reference_extractor import extract_references
+from arxit.reference_extractor import extract_references, extract_numbered_references, extract_author_year_references
+
+
+def test_reference_includes_extracted_url():
+    lines = [
+        "[1] Example Author. Example Dataset. "
+        "https://example.org/dataset."
+    ]
+
+    references = extract_numbered_references(lines)
+    assert references[0].url == "https://example.org/dataset"
+
+
+
+
+def test_reference_includes_extracted_doi():
+    lines = [
+        "[1] Example Author. Example Paper. "
+        "doi:10.1038/s41586-021-03819-2."
+    ]
+
+    references = extract_numbered_references(lines)
+    assert references[0].doi == "10.1038/s41586-021-03819-2"
+
+
+def test_reference_includes_extracted_arxiv_id():
+    lines = [
+        "[10] I. J. Goodfellow et al. "
+        "Maxout Networks. arXiv: 1302.4389, 2013."
+    ]
+
+    references = extract_numbered_references(lines)
+    assert references[0].arxiv_id == "1302.4389"
+
+
 
 def test_extract_references_when_year_starts_next_line():
     sections = [
@@ -166,3 +200,26 @@ def test_extract_references_with_wrapped_author_list():
         "multiagent systems. Preprint, arXiv:2501.14844."
     )
 
+
+
+def test_numbered_reference_includes_extracted_year():
+    lines = [
+        "[1] K. He, X. Zhang, S. Ren, and J. Sun. "
+        "Deep residual learning. 2016."
+    ]
+
+    references = extract_numbered_references(lines)
+    assert references[0].year == 2016
+
+
+
+
+def test_author_year_reference_includes_extracted_year():
+    lines = [
+        "Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K. "
+        "2019. BERT: Pre-training of deep bidirectional transformers."
+    ]
+
+    references = extract_author_year_references(lines)
+
+    assert references[0].year == 2019

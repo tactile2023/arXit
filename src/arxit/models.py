@@ -16,6 +16,10 @@ class ArxivMetadata:
 class Reference:
     label: str | None
     raw_text: str
+    year: int | None = None
+    arxiv_id: str | None = None
+    doi: str | None = None
+    url: str | None = None
 
 
 @dataclass
@@ -39,3 +43,31 @@ class ParsedPaper:
     pages: list[ParsedPage]
     sections: list[PaperSection]
     references: list[Reference]
+
+
+
+
+@dataclass
+class ArxivCitationResult:
+    reference: Reference
+    metadata: ArxivMetadata | None
+    error: str | None = None
+
+
+@dataclass
+class Finding: 
+    finding_type: str
+    message: str
+    reference: Reference
+
+
+
+@dataclass
+class DoiCitationResult:
+    reference: Reference
+    metadata: dict | None
+    agency: str | None = None
+    error: str | None = None
+
+
+
