@@ -142,6 +142,7 @@ def find_heading_title(line, current_title=None):
 
     if match: 
         candidate = match.group(1).strip()
+        if ". " in candidate: return None
 
         if not candidate[0].isalpha():
             return None

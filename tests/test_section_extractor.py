@@ -2,6 +2,32 @@ from arxit.models import ParsedPage
 from arxit.section_extractor import extract_sections
 
 
+def test_does_not_treat_decimal_prose_as_heading():
+    pages = [
+        ParsedPage(
+            page_number=9,
+            text=(
+                "4 Experiments\n"
+                "The feature-based approach performs within\n"
+                "0.3 F1 behind fine-tuning the entire model. This\n"
+                "demonstrates the effectiveness of BERT."
+            ),
+        ),
+    ]
+
+    sections = extract_sections(pages)
+
+    assert [section.title for section in sections] == [
+        "Experiments",
+    ]
+
+    assert (
+        "0.3 F1 behind fine-tuning the entire model. This"
+        in sections[0].text
+    )
+
+
+
 def test_references_end_at_unnumbered_lettered_appendix():
     pages = [
         ParsedPage(
