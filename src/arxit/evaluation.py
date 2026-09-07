@@ -84,7 +84,7 @@ def build_arxiv_year_query(category: str, year: int ) -> str:
     )
 
 
-def select_stratified_corpus( metadata_groups: list[list[ArxivMetadata]], papers_per_group: int ) -> list[str]:
+def select_stratified_corpus(metadata_groups: list[list[ArxivMetadata]], papers_per_group: int ) -> list[str]:
     if papers_per_group < 0:
         raise ValueError(
             "papers_per_group cannot be negative"
@@ -93,14 +93,14 @@ def select_stratified_corpus( metadata_groups: list[list[ArxivMetadata]], papers
     if papers_per_group == 0:
         return []
 
-    selected_ids = []
+    selected_groups = []
     seen_ids = set()
 
     for group_number, group in enumerate(
         metadata_groups,
         start=1,
     ):
-        selected_from_group = 0
+        group_ids = []
 
         for metadata in group:
             arxiv_id = re.sub(
@@ -113,26 +113,31 @@ def select_stratified_corpus( metadata_groups: list[list[ArxivMetadata]], papers
             if arxiv_id in seen_ids:
                 continue
 
-            selected_ids.append(arxiv_id)
+            group_ids.append(arxiv_id)
             seen_ids.add(arxiv_id)
-            selected_from_group += 1
 
-            if (
-                selected_from_group
-                == papers_per_group
-            ):
+            if len(group_ids) == papers_per_group:
                 break
 
-        if selected_from_group < papers_per_group:
+        if len(group_ids) < papers_per_group:
             raise RuntimeError(
                 f"Group {group_number} provided "
-                f"only {selected_from_group} unique "
+                f"only {len(group_ids)} unique "
                 f"papers; {papers_per_group} "
                 f"were required."
             )
 
-    return selected_ids
+        selected_groups.append(group_ids)
 
+    selected_ids = []
+
+    for index in range(papers_per_group):
+        for group_ids in selected_groups:
+            selected_ids.append(
+                group_ids[index]
+            )
+
+    return selected_ids
 
 
 

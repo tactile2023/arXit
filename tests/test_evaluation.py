@@ -132,8 +132,8 @@ def test_select_stratified_corpus_fills_each_group():
 
     assert selected_ids == [
         "2101.00001",
-        "2101.00002",
         "2101.00004",
+        "2101.00002",
         "2101.00005",
     ]
 

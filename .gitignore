@@ -19,3 +19,9 @@ __pycache__/
 
 # Ignore sample outputs
 *-output*.txt
+
+
+# Generated evaluation artifacts
+benchmarks/corpus-generation-checkpoint.json
+benchmarks/paper_ids-oldest-newest.txt
+benchmarks/results*/
