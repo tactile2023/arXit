@@ -1,6 +1,89 @@
 from arxit.models import PaperSection
 from arxit.reference_extractor import extract_references, extract_numbered_references, extract_author_year_references
 
+def test_extracts_plain_numbered_references():
+    sections = [
+        PaperSection(
+            title="References",
+            text=(
+                "1. First Author. First paper. (2023)\n"
+                "Continuation of the first reference.\n"
+                "2. Second Author. Second paper. (2024)"
+            ),
+            start_page=8,
+            end_page=8,
+        )
+    ]
+
+    references = extract_references(sections)
+
+    assert [reference.label for reference in references] == [
+        "1",
+        "2",
+    ]
+
+    assert references[0].raw_text == (
+        "First Author. First paper. (2023) "
+        "Continuation of the first reference."
+    )
+
+    assert references[1].raw_text == (
+        "Second Author. Second paper. (2024)"
+    )
+
+
+def test_extracts_unnumbered_references_ending_with_year():
+    sections = [
+        PaperSection(
+            title="References",
+            text=(
+                "Anthropic. Claude 4 technical report. "
+                "Technical report, Anthropic, 2025.\n"
+                "Rahul Arora, Jason Wei, and Rebecca Hicks,\n"
+                "Healthbench: Evaluating language models. "
+                "arXiv:2505.08775, 2025.\n"
+                "12\n"
+                "Gemma Team, Thomas Mesnard, and Cassidy Hardin,\n"
+                "Gemma: Open models based on Gemini research "
+                "and technology. arXiv:2403.08295, 2024.\n"
+                "13"
+            ),
+            start_page=11,
+            end_page=13,
+        )
+    ]
+
+    references = extract_references(sections)
+
+    assert len(references) == 3
+
+    assert references[0].raw_text == (
+        "Anthropic. Claude 4 technical report. "
+        "Technical report, Anthropic, 2025."
+    )
+
+    assert references[1].raw_text == (
+        "Rahul Arora, Jason Wei, and Rebecca Hicks, "
+        "Healthbench: Evaluating language models. "
+        "arXiv:2505.08775, 2025."
+    )
+
+    assert references[2].raw_text == (
+        "Gemma Team, Thomas Mesnard, and Cassidy Hardin, "
+        "Gemma: Open models based on Gemini research "
+        "and technology. arXiv:2403.08295, 2024."
+    )
+
+    assert all(
+        " 12 " not in f" {reference.raw_text} "
+        and " 13 " not in f" {reference.raw_text} "
+        for reference in references
+    )
+
+    
+
+
+
 
 def test_reference_includes_extracted_url():
     lines = [

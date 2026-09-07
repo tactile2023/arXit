@@ -9,6 +9,18 @@ REFERENCE_START_PATTERN = re.compile(
     r"^\[(\d+)\]\s*(.*)$"
 )
 
+PLAIN_NUMBERED_REFERENCE_START_PATTERN = re.compile(
+    r"^(\d{1,3})\.\s+(.+)$"
+)
+
+YEAR_TERMINATED_REFERENCE_PATTERN = re.compile(
+    r",\s+(?:19|20)\d{2}[a-z]?\.$"
+)
+
+PAGE_NUMBER_PATTERN = re.compile(
+    r"^\d{1,3}$"
+)
+
 AUTHOR_YEAR_START_PATTERN = re.compile(
     r"^.+\.\s+(?:19|20)\d{2}[a-z]?\.(?:\s+.*)?$"
 )
@@ -26,7 +38,27 @@ def build_reference(label, raw_text):
         doi = extract_doi(raw_text),
         url = extract_url(raw_text)
     )
-    
+
+
+
+def match_numbered_reference_start(line):
+    for pattern in (
+        REFERENCE_START_PATTERN,
+        PLAIN_NUMBERED_REFERENCE_START_PATTERN,
+    ):
+        match = pattern.match(line)
+
+        if match:
+            return (
+                match.group(1),
+                match.group(2).strip(),
+            )
+
+    return None
+
+
+
+
 
 
 def extract_references(sections):
@@ -49,13 +81,31 @@ def extract_references(sections):
         if raw_line.strip()
     ]
 
+    lines = [
+    line
+    for line in lines
+    if PAGE_NUMBER_PATTERN.fullmatch(line) is None
+    ]
+
     has_numbered_references = any(
-        REFERENCE_START_PATTERN.match(line)
+        match_numbered_reference_start(line)
+        is not None
         for line in lines
     )
 
     if has_numbered_references:
         return extract_numbered_references(lines)
+
+    has_year_terminated_references = any(
+    YEAR_TERMINATED_REFERENCE_PATTERN.search(line)
+    is not None
+    for line in lines
+    )
+
+    if has_year_terminated_references:
+        return extract_year_terminated_references(
+            lines
+        )
 
     return extract_author_year_references(lines)
 
@@ -66,9 +116,9 @@ def extract_numbered_references(lines):
     current_lines = []
 
     for line in lines:
-        match = REFERENCE_START_PATTERN.match(line)
+        match = match_numbered_reference_start(line)
 
-        if match:
+        if match is not None:
             if current_label is not None:
                 references.append(
                     build_reference(
@@ -77,8 +127,8 @@ def extract_numbered_references(lines):
                     )
                 )
 
-            current_label = match.group(1)
-            current_lines = [match.group(2).strip()]
+            current_label, first_line = match
+            current_lines = [first_line]
 
         elif current_label is not None:
             current_lines.append(line)
@@ -95,6 +145,40 @@ def extract_numbered_references(lines):
 
 
 
+def extract_year_terminated_references(lines):
+    references = []
+    current_lines = []
+
+    for line in lines:
+        current_lines.append(line)
+
+        ends_reference = (
+            YEAR_TERMINATED_REFERENCE_PATTERN.search(
+                line
+            )
+            is not None
+        )
+
+        if ends_reference:
+            references.append(
+                Reference(
+                    label=None,
+                    raw_text=" ".join(
+                        current_lines
+                    ),
+                )
+            )
+            current_lines = []
+
+    if current_lines:
+        references.append(
+            Reference(
+                label=None,
+                raw_text=" ".join(current_lines),
+            )
+        )
+
+    return references
 
 
 
