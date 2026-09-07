@@ -10,8 +10,13 @@ from arxit.arxiv_client import (
 from arxit.arxiv_parser import (
     parse_arxiv_metadata_batch,
 )
-from arxit.evaluation import select_corpus
 
+from arxit.evaluation import (
+    build_arxiv_year_query,
+    select_stratified_corpus,
+    write_corpus_checkpoint,
+    load_corpus_checkpoint
+)
 
 CATEGORIES = (
     "cs.LG",
@@ -22,9 +27,13 @@ CATEGORIES = (
     "cs.IR",
 )
 
-SORT_ORDERS = (
-    "ascending",
-    "descending",
+
+YEARS = (
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
 )
 
 
@@ -72,18 +81,35 @@ def build_parser():
     )
 
     parser.add_argument(
-        "--target",
-        type=int,
-        default=600,
-        help="Number of unique papers to select.",
+    "--checkpoint",
+    type=Path,
+    default=Path(
+        "benchmarks/"
+        "corpus-generation-checkpoint.json"
+    ),
+    help=(
+        "Checkpoint used to resume completed "
+        "category-year queries."
+    ),
+    )
+
+    parser.add_argument(
+    "--papers-per-group",
+    type=int,
+    default=20,
+    help=(
+        "Papers selected from each "
+        "category-year group."
+        ),
     )
     parser.add_argument(
-        "--per-query",
+        "--candidates-per-group",
         type=int,
         default=75,
         help=(
-            "Results requested for each category "
-            "and sort order."
+            "Candidate papers requested for each "
+            "category-year group before "
+            "deduplication."
         ),
     )
     parser.add_argument(
@@ -107,14 +133,18 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
 
-    if args.target <= 0:
+    if args.papers_per_group <= 0:
         raise ValueError(
-            "target must be positive"
+            "papers-per-group must be positive"
         )
 
-    if args.per_query <= 0:
+    if (
+        args.candidates_per_group
+        < args.papers_per_group
+    ):
         raise ValueError(
-            "per-query must be positive"
+            "candidates-per-group must be at "
+            "least papers-per-group"
         )
 
     if args.delay < 0:
@@ -122,52 +152,106 @@ def main():
             "delay cannot be negative"
         )
 
+
+    checkpoint_groups = (
+        load_corpus_checkpoint(args.checkpoint)
+    )
+
+
     metadata_groups = []
     request_number = 0
     total_requests = (
-        len(CATEGORIES) * len(SORT_ORDERS)
+        len(CATEGORIES) * len(YEARS)
+    )
+    expected_total = (
+        len(CATEGORIES)
+        * len(YEARS)
+        * args.papers_per_group
     )
 
     for category in CATEGORIES:
-        for sort_order in SORT_ORDERS:
+        for year in YEARS:
             request_number += 1
 
-            print(
-                f"[{request_number}/{total_requests}] "
-                f"Fetching {sort_order} "
-                f"{category} papers..."
+            group_key = (
+                f"{category}:{year}:"
+                f"{args.candidates_per_group}"
             )
 
-            metadata_items = fetch_with_retries(
-                search_query=f"cat:{category}",
-                max_results=args.per_query,
-                sort_order=sort_order,
-                delay_seconds=args.delay,
-            )
+            if group_key in checkpoint_groups:
+                metadata_items = (
+                    checkpoint_groups[group_key]
+                )
+
+                print(
+                    f"[{request_number}/"
+                    f"{total_requests}] "
+                    f"Loaded {category} {year} "
+                    f"from checkpoint "
+                    f"({len(metadata_items)} "
+                    f"candidates)."
+                )
+
+            else:
+                search_query = (
+                    build_arxiv_year_query(
+                        category,
+                        year,
+                    )
+                )
+
+                print(
+                    f"[{request_number}/"
+                    f"{total_requests}] "
+                    f"Fetching {category} papers "
+                    f"from {year}..."
+                )
+
+                metadata_items = fetch_with_retries(
+                    search_query=search_query,
+                    max_results=(
+                        args.candidates_per_group
+                    ),
+                    sort_order="descending",
+                    delay_seconds=args.delay,
+                )
+
+                checkpoint_groups[group_key] = (
+                    metadata_items
+                )
+
+                write_corpus_checkpoint(
+                    args.checkpoint,
+                    checkpoint_groups,
+                )
+
+                print(
+                    f"  Received and checkpointed "
+                    f"{len(metadata_items)} "
+                    f"candidates."
+                )
+
+                if request_number < total_requests:
+                    time.sleep(args.delay)
 
             metadata_groups.append(
                 metadata_items
             )
 
-            print(
-                f"  Received "
-                f"{len(metadata_items)} papers."
-            )
-
-            if request_number < total_requests:
-                time.sleep(args.delay)
-
-    selected_ids = select_corpus(
+    selected_ids = select_stratified_corpus(
         metadata_groups,
-        target_size=args.target,
+        papers_per_group=(
+            args.papers_per_group
+        ),
     )
 
-    if len(selected_ids) < args.target:
+    if len(selected_ids) != expected_total:
         raise RuntimeError(
-            f"Only {len(selected_ids)} unique "
-            f"papers were returned; "
-            f"{args.target} were requested."
+            f"Selected {len(selected_ids)} "
+            f"papers; expected {expected_total}."
         )
+
+
 
     args.output.parent.mkdir(
         parents=True,

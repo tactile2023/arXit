@@ -1,13 +1,15 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, fields
 from time import perf_counter
+import json
 
+from pathlib import Path
 from .models import ArxivMetadata
 from .pdf_downloader import download_pdf
 from .pdf_parser import parse_pdf
 from .reference_extractor import extract_references
 from .section_extractor import extract_sections
 import re
-
+import csv
 from collections import Counter
 from statistics import mean, median
 
@@ -71,6 +73,128 @@ def select_corpus(
                 return selected_ids
 
     return selected_ids
+
+
+def build_arxiv_year_query(category: str, year: int ) -> str:
+    return (
+        f"cat:{category} AND "
+        f"submittedDate:"
+        f"[{year}01010000 TO "
+        f"{year}12312359]"
+    )
+
+
+def select_stratified_corpus( metadata_groups: list[list[ArxivMetadata]], papers_per_group: int ) -> list[str]:
+    if papers_per_group < 0:
+        raise ValueError(
+            "papers_per_group cannot be negative"
+        )
+
+    if papers_per_group == 0:
+        return []
+
+    selected_ids = []
+    seen_ids = set()
+
+    for group_number, group in enumerate(
+        metadata_groups,
+        start=1,
+    ):
+        selected_from_group = 0
+
+        for metadata in group:
+            arxiv_id = re.sub(
+                r"v\d+$",
+                "",
+                metadata.arxiv_id,
+                flags=re.IGNORECASE,
+            )
+
+            if arxiv_id in seen_ids:
+                continue
+
+            selected_ids.append(arxiv_id)
+            seen_ids.add(arxiv_id)
+            selected_from_group += 1
+
+            if (
+                selected_from_group
+                == papers_per_group
+            ):
+                break
+
+        if selected_from_group < papers_per_group:
+            raise RuntimeError(
+                f"Group {group_number} provided "
+                f"only {selected_from_group} unique "
+                f"papers; {papers_per_group} "
+                f"were required."
+            )
+
+    return selected_ids
+
+
+
+
+def write_corpus_checkpoint(
+    checkpoint_path: Path,
+    metadata_groups: dict[
+        str,
+        list[ArxivMetadata],
+    ],
+) -> None:
+    checkpoint_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    payload = {
+        group_key: [
+            asdict(metadata)
+            for metadata in metadata_items
+        ]
+        for group_key, metadata_items
+        in metadata_groups.items()
+    }
+
+    temporary_path = checkpoint_path.with_name(
+        checkpoint_path.name + ".tmp"
+    )
+
+    temporary_path.write_text(
+        json.dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    temporary_path.replace(
+        checkpoint_path
+    )
+
+
+def load_corpus_checkpoint(checkpoint_path: Path) -> dict[str, list[ArxivMetadata]]:
+    if not checkpoint_path.exists():
+        return {}
+
+    payload = json.loads(
+        checkpoint_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    return {
+        group_key: [
+            ArxivMetadata(**metadata_data)
+            for metadata_data in metadata_items
+        ]
+        for group_key, metadata_items
+        in payload.items()
+    }
+
+
 
 
 
@@ -194,9 +318,7 @@ def evaluate_paper(metadata: ArxivMetadata) -> PaperEvaluationResult:
 
 
 
-def summarize_results(
-    results: list[PaperEvaluationResult],
-) -> dict:
+def summarize_results(results: list[PaperEvaluationResult]) -> dict:
     successful_results = [
         result
         for result in results
@@ -292,3 +414,105 @@ def summarize_results(
             failures_by_type
         ),
     }
+
+
+
+
+def append_checkpoint_result(checkpoint_path: Path, result: PaperEvaluationResult) -> None:
+    checkpoint_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    serialized_result = json.dumps(
+        asdict(result),
+        sort_keys=True,
+    )
+
+    with checkpoint_path.open(
+        "a",
+        encoding="utf-8",
+    ) as checkpoint_file:
+        checkpoint_file.write(
+            serialized_result + "\n"
+        )
+
+
+def load_checkpoint_results(checkpoint_path: Path) -> list[PaperEvaluationResult]:
+    if not checkpoint_path.exists():
+        return []
+
+    results = []
+
+    with checkpoint_path.open(
+        encoding="utf-8",
+    ) as checkpoint_file:
+        for line in checkpoint_file:
+            stripped_line = line.strip()
+
+            if not stripped_line:
+                continue
+
+            data = json.loads(stripped_line)
+
+            results.append(
+                PaperEvaluationResult(**data)
+            )
+
+    return results
+
+
+
+def write_evaluation_reports(output_directory: Path, results: list[PaperEvaluationResult]) -> None:
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    summary = summarize_results(results)
+
+    summary_path = (
+        output_directory / "summary.json"
+    )
+
+    summary_path.write_text(
+        json.dumps(
+            summary,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    csv_path = (
+        output_directory / "paper_results.csv"
+    )
+
+    field_names = [
+        result_field.name
+        for result_field in fields(
+            PaperEvaluationResult
+        )
+    ]
+
+    with csv_path.open(
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=field_names,
+        )
+
+        writer.writeheader()
+
+        for result in results:
+            row = asdict(result)
+
+            row["structural_issues"] = ";".join(
+                result.structural_issues
+            )
+
+            writer.writerow(row)
