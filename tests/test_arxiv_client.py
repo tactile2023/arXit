@@ -1,6 +1,50 @@
 import httpx
 import pytest
 from arxit.arxiv_client import fetch_arxiv_metadata_xml, fetch_arxiv_metadata_batch_xml
+import arxit.arxiv_client as client
+
+
+
+
+def test_fetch_arxiv_search_xml(monkeypatch):
+    expected_xml = "<feed>search results</feed>"
+
+    def fake_get(url, params, timeout):
+        assert url == (
+            "https://export.arxiv.org/api/query"
+        )
+        assert params == {
+            "search_query": "cat:cs.LG",
+            "start": 0,
+            "max_results": 75,
+            "sortBy": "submittedDate",
+            "sortOrder": "descending",
+        }
+        assert timeout == 60.0
+
+        request = httpx.Request("GET", url)
+
+        return httpx.Response(
+            200,
+            text=expected_xml,
+            request=request,
+        )
+
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        fake_get,
+    )
+
+    result = client.fetch_arxiv_search_xml(
+        search_query="cat:cs.LG",
+        max_results=75,
+        sort_order="descending",
+    )
+
+    assert result == expected_xml
+
+    
 
 
 
