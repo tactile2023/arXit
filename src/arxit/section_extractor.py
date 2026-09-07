@@ -136,7 +136,17 @@ def find_heading_title(line, current_title=None):
         return candidate
 
 
-
+    if (
+        current_title is not None
+        and current_title.lower()
+        in {"references", "bibliography"}
+        and re.match(
+            r"^\d{1,3}\.?\s+",
+            line,
+        )
+        is not None
+    ):
+        return None
 
     match = NUMBERED_HEADING_PATTERN.match(line)
 

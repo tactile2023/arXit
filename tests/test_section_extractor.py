@@ -2,6 +2,33 @@ from arxit.models import ParsedPage
 from arxit.section_extractor import extract_sections
 
 
+def test_numbered_reference_lines_do_not_end_references():
+    pages = [
+        ParsedPage(
+            page_number=6,
+            text=(
+                "References\n"
+                "1. First Author. A long citation. 2020.\n"
+                "7. Druglib.com - Drug Information, "
+                "Research, Clinical Trials, News\n"
+                "8. Falk, Kim. Practical recommender "
+                "systems. 2019.\n"
+                "12 BOUMEDIENE HAMZI\n"
+                "[13] Another Author. Another paper. 2021."
+            ),
+        )
+    ]
+
+    sections = extract_sections(pages)
+
+    assert len(sections) == 1
+    assert sections[0].title == "References"
+    assert "7. Druglib.com" in sections[0].text
+    assert "12 BOUMEDIENE HAMZI" in sections[0].text
+    assert "[13] Another Author" in sections[0].text
+
+
+
 def test_does_not_treat_decimal_prose_as_heading():
     pages = [
         ParsedPage(

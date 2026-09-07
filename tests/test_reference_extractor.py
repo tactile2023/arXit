@@ -1,6 +1,218 @@
 from arxit.models import PaperSection
 from arxit.reference_extractor import extract_references, extract_numbered_references, extract_author_year_references
 
+
+def test_numbered_references_reject_false_label_jump():
+    sections = [
+        PaperSection(
+            title="References",
+            text=(
+                "[43] First Author. First paper. 2018.\n"
+                "[44] Hector Zenil. Example chapter, "
+                "pages 477–\n"
+                "[496] World Scientific, 2011.\n"
+                "[45] Second Author. Second paper. 2023."
+            ),
+            start_page=11,
+            end_page=12,
+        )
+    ]
+
+    references = extract_references(sections)
+
+    assert [
+        reference.label
+        for reference in references
+    ] == [
+        "43",
+        "44",
+        "45",
+    ]
+
+    assert references[1].raw_text == (
+        "Hector Zenil. Example chapter, "
+        "pages 477– [496] World Scientific, 2011."
+    )
+
+
+
+
+def test_extracts_parenthesized_author_year_references():
+    sections = [
+        PaperSection(
+            title="References",
+            text=(
+                "Anderson, T. W. (1962). On the "
+                "distribution of a statistic.\n"
+                "The Annals of Statistics, pages 1–10.\n"
+                "Bai, Z. and Saranadasa, H. ( 1996). "
+                "Effect of high dimension.\n"
+                "Statistica Sinica, pages 311–329.\n"
+                "40\n"
+                "Chagnon, E. and Pandolfi, R. (2024). "
+                "Benchmarking topic models.\n"
+                "Natural Language Processing Journal."
+            ),
+            start_page=40,
+            end_page=41,
+        )
+    ]
+
+    references = extract_references(sections)
+
+    assert len(references) == 3
+    assert references[0].year == 1962
+    assert references[1].year == 1996
+    assert references[2].year == 2024
+    assert " 40 " not in (
+        f" {references[2].raw_text} "
+    )
+
+
+
+def test_year_terminated_references_handle_wrapped_year_and_doi():
+    sections = [
+        PaperSection(
+            title="References",
+            text=(
+                "Behnke Berit. A Directed Search. "
+                "University Hannover,\n"
+                "2013.\n"
+                "Sylvia Biscoveanu. New Spin. "
+                "Journal, 2021. doi:\n"
+                "10.1103/example.\n"
+                "Joseph Romano. Detection methods. "
+                "Journal, 2017. doi: 10.1007/\n"
+                "s41114-017-0004-1.\n"
+                "Michael Ross. Precision Sensors. "
+                "University of Washington,\n"
+                "2020."
+            ),
+            start_page=6,
+            end_page=7,
+        )
+    ]
+
+    references = extract_references(sections)
+
+    assert len(references) == 4
+
+    assert references[0].raw_text == (
+        "Behnke Berit. A Directed Search. "
+        "University Hannover, 2013."
+    )
+
+    assert references[1].raw_text == (
+        "Sylvia Biscoveanu. New Spin. "
+        "Journal, 2021. doi: "
+        "10.1103/example."
+    )
+
+    assert references[2].raw_text == (
+        "Joseph Romano. Detection methods. "
+        "Journal, 2017. doi: 10.1007/ "
+        "s41114-017-0004-1."
+    )
+
+    assert references[3].raw_text == (
+        "Michael Ross. Precision Sensors. "
+        "University of Washington, 2020."
+    )
+
+
+
+
+
+
+
+
+
+
+def test_year_terminated_references_include_doi_lines():
+    sections = [
+        PaperSection(
+            title="References",
+            text=(
+                "First Author. First paper. "
+                "Journal, 2021. doi:\n"
+                "10.1234/first-paper.\n"
+                "Second Author. Second paper. "
+                "Journal, 2020. doi: "
+                "10.1234/second-paper.\n"
+                "Third Author. Third paper. "
+                "University, 2019."
+            ),
+            start_page=6,
+            end_page=6,
+        )
+    ]
+
+    references = extract_references(sections)
+
+    assert len(references) == 3
+
+    assert references[0].raw_text == (
+        "First Author. First paper. "
+        "Journal, 2021. doi: "
+        "10.1234/first-paper."
+    )
+
+    assert references[1].raw_text == (
+        "Second Author. Second paper. "
+        "Journal, 2020. doi: "
+        "10.1234/second-paper."
+    )
+
+    assert references[2].raw_text == (
+        "Third Author. Third paper. "
+        "University, 2019."
+    )
+
+
+
+
+
+
+
+def test_extracts_from_repeated_reference_sections():
+    sections = [
+        PaperSection(
+            title="References",
+            text="",
+            start_page=6,
+            end_page=6,
+        ),
+        PaperSection(
+            title="References",
+            text=(
+                "Rana Adhikari. Sensitivity and noise "
+                "analysis. MIT, 2004.\n"
+                "Behnke Berit. A Directed Search for "
+                "Gravitational Waves. Hannover, 2013."
+            ),
+            start_page=6,
+            end_page=7,
+        ),
+    ]
+
+    references = extract_references(sections)
+
+    assert len(references) == 2
+
+    assert references[0].raw_text == (
+        "Rana Adhikari. Sensitivity and noise "
+        "analysis. MIT, 2004."
+    )
+
+    assert references[1].raw_text == (
+        "Behnke Berit. A Directed Search for "
+        "Gravitational Waves. Hannover, 2013."
+    )
+
+
+
+
+
 def test_extracts_plain_numbered_references():
     sections = [
         PaperSection(
@@ -80,7 +292,7 @@ def test_extracts_unnumbered_references_ending_with_year():
         for reference in references
     )
 
-    
+
 
 
 
